@@ -255,6 +255,13 @@ class DataGenerator(object):
                     # Encode skill_id
                     x_student.append(x_data)
                     skill_answer = skill_value * 2 + answer
+                    # print('skill_answer')
+                    # print(skill_answer)
+                    skill_answer = np.array([skill_answer])
+                    skill_value = np.array([skill_value])
+                    skill_answer = skill_answer.reshape(-1,1)
+                    skill_value = skill_value.reshape(-1,1)
+                    
                     x_data = self.feature_encoder.fit_transform(skill_answer)[0]
 
                     # Encode label
@@ -306,4 +313,5 @@ class DataGenerator(object):
             self.reset()
             while not self.done:
                 batch_features, batch_labels = self.next_batch()
+                print(batch_labels.shape)
                 yield batch_features, batch_labels
