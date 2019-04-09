@@ -191,8 +191,8 @@ class DataGenerator(object):
         self.label_dim = num_skills + 1
         self.features_len = len(features)
         self.total_steps = int(math.ceil(float(self.features_len) / self.batch_size))
-        self.feature_encoder = OneHotEncoder(self.feature_dim, sparse=False)
-        self.label_encoder = OneHotEncoder(self.label_dim, sparse=False)
+        self.feature_encoder = OneHotEncoder(categories=[range(self.feature_dim)], sparse=False)
+        self.label_encoder = OneHotEncoder(categories=[range(self.label_dim)], sparse=False)
 
     # Ref: https://groups.google.com/forum/#!msg/keras-users/7sw0kvhDqCw/QmDMX952tq8J
     def __pad_sequences(self, sequences, maxlen=None, dim=1, dtype='int32', padding='pre', truncating='pre', value=0.):
