@@ -1,5 +1,6 @@
 import pandas as pd
 import random
+import numpy as np
 
 
 def split_dataset(data, validation_rate, testing_rate, shuffle=True):
@@ -30,6 +31,8 @@ def read_file(dataset_path):
 
     # Step 1 - Remove problems without a skill_id
     data.dropna(subset=['skill_id'], inplace=True)
+
+    data.correct = data.correct.astype(np.int)
 
     # Step 2 - Convert to sequence by student id
     students_seq = data.groupby("user_id", as_index=True)["skill_id", "correct"].apply(lambda x: x.values.tolist()).tolist()
