@@ -9,7 +9,7 @@ Created on Sat Mar 30 18:31:56 2019
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
     
-#dataset = "~/Documents/StudentLearningProcess/skill_builder_data_corrected_withskills.csv" # Dataset path
+# dataset = "~/Documents/StudentLearningProcess/skill_builder_data_corrected_withskills.csv" # Dataset path
 dataset = "~/Documents/StudentLearningProcess/2015_100_skill_builders_main_problems.csv" # Dataset path
 #dataset = "data/skill_builder_data.csv"
 best_model_file = "saved_models/ASSISTments.best.model.weights.hdf5" # File to save the model.
@@ -18,7 +18,7 @@ train_log = "logs/dktmodel.train.log" # File to save the training log.
 eval_log = "logs/dktmodel.eval.log" # File to save the testing log.
 optimizer = "adagrad" # Optimizer to use
 lstm_units = 250 # Number of LSTM units
-batch_size = 20 # Batch size
+batch_size = 40 # Batch size
 epochs = 10 # Number of epochs to train
 dropout_rate = 0.6 # Dropout rate
 verbose = 1 # Verbose = {0,1,2}
