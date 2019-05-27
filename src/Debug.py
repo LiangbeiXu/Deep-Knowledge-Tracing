@@ -10,7 +10,8 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
     
 # dataset = "~/Documents/StudentLearningProcess/skill_builder_data_corrected_withskills.csv" # Dataset path
-dataset = "~/Documents/StudentLearningProcess/2015_100_skill_builders_main_problems.csv" # Dataset path
+# dataset = "~/Documents/StudentLearningProcess/2015_100_skill_builders_main_problems.csv" # Dataset path
+dataset = '~/Documents/Assistment09-problem.csv'
 #dataset = "data/skill_builder_data.csv"
 best_model_file = "saved_models/ASSISTments.best.model.weights.hdf5" # File to save the model.
 # best_model_file = "logs/8/saved_models/ASSISTments.best.model.weights.hdf5" # File to save the model.
@@ -27,7 +28,7 @@ validation_rate = 0.2 # Portion of training data to be used for validation
 
 from Utils import *
 
-dataset, num_skills = read_file(dataset)
+dataset, num_skills = read_file_prob(dataset)
 X_train, X_val, X_test, y_train, y_val, y_test = split_dataset(dataset, validation_rate, testing_rate)
 
 print("======== Data Summary ========")

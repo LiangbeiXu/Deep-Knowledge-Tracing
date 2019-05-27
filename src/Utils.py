@@ -25,6 +25,26 @@ def split_dataset(data, validation_rate, testing_rate, shuffle=True):
 
     return X_train, X_val, X_test, y_train, y_val, y_test
 
+def read_file_prob(dataset_path):
+    data = pd.read_csv(dataset_path)
+    students_seq = data.groupby("user_id", as_index=True)["problem_id", "correct"].apply(lambda x: x.values.tolist()).tolist()
+
+    # Step 3 - Rearrange the prob_id
+    seqs_by_student = {}
+    prob_ids = {}
+    num_prob = 0
+
+    for seq_idx, seq in enumerate(students_seq):
+        for (prob, answer) in seq:
+            if seq_idx not in seqs_by_student:
+                seqs_by_student[seq_idx] = []
+            if prob not in prob_ids:
+                prob_ids[prob] = num_prob
+                num_prob += 1
+
+            seqs_by_student[seq_idx].append((prob_ids[prob], answer))
+
+    return list(seqs_by_student.values()), num_prob
 
 def read_file(dataset_path):
     data = pd.read_csv(dataset_path, dtype={'skill_name': str})
@@ -33,6 +53,7 @@ def read_file(dataset_path):
     data.dropna(subset=['skill_id'], inplace=True)
 
     data.correct = data.correct.astype(np.int)
+    data.sort_values(by=['order_id'], inplace=True)
 
     # Step 2 - Convert to sequence by student id
     students_seq = data.groupby("user_id", as_index=True)["skill_id", "correct"].apply(lambda x: x.values.tolist()).tolist()
