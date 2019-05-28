@@ -11,8 +11,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
     
 # dataset = "~/Documents/StudentLearningProcess/skill_builder_data_corrected_withskills.csv" # Dataset path
 # dataset = "~/Documents/StudentLearningProcess/2015_100_skill_builders_main_problems.csv" # Dataset path
-dataset = '~/Documents/Assistment09-problem.csv'
-#dataset = "data/skill_builder_data.csv"
+dataset = '~/Documents/Assistment09-problem-single_skill.csv'
+# dataset = "data/skill_builder_data.csv"
 best_model_file = "saved_models/ASSISTments.best.model.weights.hdf5" # File to save the model.
 # best_model_file = "logs/8/saved_models/ASSISTments.best.model.weights.hdf5" # File to save the model.
 train_log = "logs/dktmodel.train.log" # File to save the training log.
@@ -46,6 +46,7 @@ train_gen = DataGenerator(X_train, y_train, num_skills, batch_size)
 val_gen = DataGenerator(X_val, y_val, num_skills, batch_size)
 test_gen = DataGenerator(X_test, y_test, num_skills, batch_size)
 
+x, y = train_gen.next_batch()
 # Create model
 student_model = DKTModel(num_skills=train_gen.num_skills,
                       num_features=train_gen.feature_dim,

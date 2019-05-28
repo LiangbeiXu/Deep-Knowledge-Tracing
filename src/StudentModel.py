@@ -123,13 +123,16 @@ class DKTModel(object):
 
         self.batch_size = batch_size
         self.num_skills = num_skills
-
+        # this is DKT
         self.__model = Sequential()
         self.__model.add(Masking(-1., batch_input_shape=(batch_size, None, num_features)))
         self.__model.add(LSTM(hidden_units, return_sequences=True, stateful=True))
         self.__model.add(Dropout(dropout_rate))
         self.__model.add(TimeDistributed(Dense(num_skills, activation='sigmoid')))
         self.__model.compile(loss=loss_function, optimizer=optimizer)
+
+        #user = Input(name = 'user', shape = [1])
+        #item = Input(name = 'item', shape = [1])
 
     def load_weights(self, filepath):
         assert(filepath is not None)
@@ -251,29 +254,33 @@ class DataGenerator(object):
                 x_data = np.zeros(self.feature_dim, dtype=int)
                 answers = batch_answers[idx]
 
-                for skill_index, skill_value in enumerate(questions):
-                    answer = answers[skill_index]
+                # should move one step ahead to generate the response
+                if len(questions) > 1:
+                    for skill_index in range(len(questions)-1):
+                        answer = answers[skill_index]
+                        skill_value = questions[skill_index]
+                        # Encode skill_id
+                        x_student.append(x_data)
+                        skill_answer = skill_value * 2 + answer
+                        # print('skill_answer')
+                        # print(skill_answer)
+                        skill_answer = np.array([skill_answer])
+                        skill_value = np.array([skill_value])
+                        skill_answer = skill_answer.reshape(-1,1)
+                        skill_value = skill_value.reshape(-1,1)
+                        x_data = self.feature_encoder.fit_transform(skill_answer)[0]
 
-                    # Encode skill_id
-                    x_student.append(x_data)
-                    skill_answer = skill_value * 2 + answer
-                    # print('skill_answer')
-                    # print(skill_answer)
-                    skill_answer = np.array([skill_answer])
-                    skill_value = np.array([skill_value])
-                    skill_answer = skill_answer.reshape(-1,1)
-                    skill_value = skill_value.reshape(-1,1)
+                        answer2 = answers[skill_index+1]
+                        skill_value2 = questions[skill_index+1]
+                        skill_value2 = np.array([skill_value2])
+                        skill_value2 = skill_value2.reshape(-1,1)
+
+                        y_data = self.label_encoder.fit_transform(skill_value2)[0]
+                        y_data[-1] = answer2
+                        y_student.append(y_data)
+                    x.append(x_student)
+                    y.append(y_student)
                     
-                    x_data = self.feature_encoder.fit_transform(skill_answer)[0]
-
-                    # Encode label
-                    y_data = self.label_encoder.fit_transform(skill_value)[0]
-                    y_data[-1] = answer
-                    y_student.append(y_data)
-
-                x.append(x_student)
-                y.append(y_student)
-
             return x, y
 
         assert(~self.done)
