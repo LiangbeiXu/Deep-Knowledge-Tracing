@@ -1,6 +1,6 @@
 from keras.callbacks import ModelCheckpoint, Callback, CSVLogger, Progbar
-from keras.models import Sequential
-from keras.layers import TimeDistributed, Masking, Dense, Dropout
+from keras.models import Sequential, Model
+from keras.layers import TimeDistributed, Masking, Dense, Dropout, Input
 from keras.layers.recurrent import LSTM
 from keras import backend as K
 from sklearn.metrics import roc_auc_score, precision_score, accuracy_score
@@ -124,15 +124,23 @@ class DKTModel(object):
         self.batch_size = batch_size
         self.num_skills = num_skills
         # this is DKT
-        self.__model = Sequential()
-        self.__model.add(Masking(-1., batch_input_shape=(batch_size, None, num_features)))
-        self.__model.add(LSTM(hidden_units, return_sequences=True, stateful=True))
-        self.__model.add(Dropout(dropout_rate))
-        self.__model.add(TimeDistributed(Dense(num_skills, activation='sigmoid')))
-        self.__model.compile(loss=loss_function, optimizer=optimizer)
+
+        if 0:
+            self.__model = Sequential()
+            self.__model.add(Masking(-1., batch_input_shape=(batch_size, None, num_features)))
+            self.__model.add(LSTM(hidden_units, return_sequences=True, stateful=True))
+            self.__model.add(Dropout(dropout_rate))
+            self.__model.add(TimeDistributed(Dense(num_skills, activation='sigmoid')))
+            self.__model.compile(loss=loss_function, optimizer=optimizer)
 
         #user = Input(name = 'user', shape = [1])
-        #item = Input(name = 'item', shape = [1])
+        item_input = Input(name = 'item', shape = [None, num_features], batch_shape=[batch_size, None, num_features])
+        item = Masking(-1, batch_input_shape=(batch_size, None, num_features)) (item_input)
+        item_LSTM = LSTM(units=hidden_units, return_sequences=True, stateful=True)(item)
+        dropout = Dropout(dropout_rate)(item_LSTM)
+        out = Dense(num_skills, activation='sigmoid')(dropout)
+        self.__model = Model(inputs=item_input, outputs=out)
+        self.__model.compile(loss=loss_function, optimizer=optimizer)
 
     def load_weights(self, filepath):
         assert(filepath is not None)
@@ -280,7 +288,7 @@ class DataGenerator(object):
                         y_student.append(y_data)
                     x.append(x_student)
                     y.append(y_student)
-                    
+
             return x, y
 
         assert(~self.done)
