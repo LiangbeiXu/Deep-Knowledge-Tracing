@@ -28,8 +28,9 @@ validation_rate = 0.2 # Portion of training data to be used for validation
 
 from Utils import *
 
-dataset, num_skills = read_file_prob(dataset)
-X_train, X_val, X_test, y_train, y_val, y_test = split_dataset(dataset, validation_rate, testing_rate)
+dataset, stas = read_file_with_skill_prob_user(dataset)
+num_skills = stas['num_skills']
+X_train, X_val, X_test, y_train, y_val, y_test = split_dataset_with_skill_prob_user(dataset, validation_rate, testing_rate)
 
 print("======== Data Summary ========")
 print("Data size: %d" % len(dataset))
