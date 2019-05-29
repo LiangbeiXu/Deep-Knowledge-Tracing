@@ -47,7 +47,9 @@ train_gen = DataGenerator(X_train, y_train, num_skills, batch_size)
 val_gen = DataGenerator(X_val, y_val, num_skills, batch_size)
 test_gen = DataGenerator(X_test, y_test, num_skills, batch_size)
 
-x, y = train_gen.next_batch()
+x, User, Prob,  y = train_gen.next_batch()
+
+print('x, user, prob, y:', x, User, Prob, y)
 # Create model
 student_model = DKTModel(num_skills=train_gen.num_skills,
                       num_features=train_gen.feature_dim,

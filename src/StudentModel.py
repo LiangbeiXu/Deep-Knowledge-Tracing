@@ -135,6 +135,7 @@ class DKTModel(object):
 
         #user = Input(name = 'user', shape = [1])
         item_input = Input(name = 'item', shape = [None, num_features], batch_shape=[batch_size, None, num_features])
+        
         item = Masking(-1, batch_input_shape=(batch_size, None, num_features)) (item_input)
         item_LSTM = LSTM(units=hidden_units, return_sequences=True, stateful=True)(item)
         dropout = Dropout(dropout_rate)(item_LSTM)
@@ -199,7 +200,9 @@ class DataGenerator(object):
         self.step = 0
         self.done = False
         self.feature_dim = num_skills * 2
-        self.label_dim = num_skills + 1
+        self.label_dim = 1
+        self.user_dim = 1
+        self.prob_dim = 1
         self.features_len = len(features)
         self.total_steps = int(math.ceil(float(self.features_len) / self.batch_size))
         self.feature_encoder = OneHotEncoder(self.feature_dim, sparse=False)
@@ -238,26 +241,33 @@ class DataGenerator(object):
         return x
 
     def next_batch(self):
-        def fill_batches(x, y):
+        def fill_batches(x, user, prob, y):
             for e in range(self.batch_size - len(x)):
                 x.append([np.array([-1.0 for _ in range(0, self.feature_dim)])])
                 y.append([np.array([-1.0 for _ in range(0, self.label_dim)])])
+                user.append([np.array([-1.0 for _ in range(0, self.user_dim)])])
+                prob.append([np.array([-1.0 for _ in range(0, self.prob_dim)])])
+            return x, user, prob, y
 
-            return x, y
-
-        def pad_sequences(x, y):
+        def pad_sequences(x, user, prob, y):
             max_seq_steps = max([len(seq) for seq in x])
             x = self.__pad_sequences(x, padding='pre', maxlen=max_seq_steps, dim=self.feature_dim, value=-1.0, dtype='float')
             y = self.__pad_sequences(y, padding='pre', maxlen=max_seq_steps, dim=self.label_dim, value=-1.0, dtype='float')
-
-            return x, y
+            user = self.__pad_sequences(user, padding='pre', maxlen=max_seq_steps, dim=self.user_dim, value=-1.0, dtype='float')
+            prob = self.__pad_sequences(prob, padding='pre', maxlen=max_seq_steps, dim=self.prob_dim, value=-1.0, dtype='float')
+            return x, user, prob, y
 
         def encode_batch(batch_questions, batch_answers):
-            x = []
-            y = []
+            x = [] # skill_correct
+            y = [] # correct
+            prob = []
+            user = []
+
             for idx, questions in enumerate(batch_questions):
                 x_student = []
                 y_student = []
+                prob_student = []
+                user_student = []
 
                 x_data = np.zeros(self.feature_dim, dtype=int)
                 answers = batch_answers[idx]
@@ -266,9 +276,9 @@ class DataGenerator(object):
                 if len(questions) > 1:
                     for skill_index in range(len(questions)-1):
                         answer = answers[skill_index]
-                        skill_value = questions[skill_index]
+                        skill_value = questions[skill_index][1]
                         # Encode skill_id
-                        x_student.append(x_data)
+
                         skill_answer = skill_value * 2 + answer
                         # print('skill_answer')
                         # print(skill_answer)
@@ -277,19 +287,27 @@ class DataGenerator(object):
                         skill_answer = skill_answer.reshape(-1,1)
                         skill_value = skill_value.reshape(-1,1)
                         x_data = self.feature_encoder.fit_transform(skill_answer)[0]
-
+                        x_student.append(x_data)
                         answer2 = answers[skill_index+1]
-                        skill_value2 = questions[skill_index+1]
-                        skill_value2 = np.array([skill_value2])
-                        skill_value2 = skill_value2.reshape(-1,1)
+                        # skill_value2 = questions[skill_index+1]
+                        # skill_value2 = np.array([skill_value2])
+                        # skill_value2 = skill_value2.reshape(-1,1)
 
-                        y_data = self.label_encoder.fit_transform(skill_value2)[0]
-                        y_data[-1] = answer2
+                        # y_data = self.label_encoder.fit_transform(skill_value2)[0]
+                        y_data = [answer2]
                         y_student.append(y_data)
+
+                        user_data = [questions[skill_index][0]]
+                        user_student.append(user_data)
+                        prob_data = [questions[skill_index][2]]
+                        prob_student.append(prob_data)
+
                     x.append(x_student)
                     y.append(y_student)
+                    user.append(user_student)
+                    prob.append(prob_student)
 
-            return x, y
+            return x, user, prob, y
 
         assert(~self.done)
 
@@ -301,17 +319,17 @@ class DataGenerator(object):
             end_pos = self.features_len
 
         # Apply one-hot encoding
-        x_batch, y_batch = encode_batch(self.features[start_pos:end_pos], self.labels[start_pos:end_pos])
+        x_batch, user_batch, prob_batch, y_batch = encode_batch(self.features[start_pos:end_pos], self.labels[start_pos:end_pos])
 
         # Fill up incomplete batch
-        x_batch, y_batch = fill_batches(x_batch, y_batch)
+        x_batch, user_batch, prob_batch, y_batch = fill_batches(x_batch, user_batch, prob_batch, y_batch)
 
         # Pad sequences to the same size
-        x_batch, y_batch = pad_sequences(x_batch, y_batch)
+        x_batch, user_batch, prob_batch, y_batch = pad_sequences(x_batch, user_batch, prob_batch, y_batch)
 
         self.step += 1
 
-        return x_batch, y_batch
+        return x_batch, user_batch, prob_batch, y_batch
 
     def reset(self, shuffle=True):
         if shuffle:
@@ -329,6 +347,6 @@ class DataGenerator(object):
         while True:
             self.reset()
             while not self.done:
-                batch_features, batch_labels = self.next_batch()
+                batch_features, dummy, dummy2, batch_labels = self.next_batch()
                 print(batch_labels.shape)
                 yield batch_features, batch_labels
