@@ -25,11 +25,13 @@ dropout_rate = 0.6 # Dropout rate
 verbose = 1 # Verbose = {0,1,2}
 testing_rate = 0.2 # Portion of data to be used for testing
 validation_rate = 0.2 # Portion of training data to be used for validation
-
+embedding_size = 16 # prob and user embedding dimension
 from Utils import *
 
-dataset, stas = read_file_with_skill_prob_user(dataset)
-num_skills = stas['num_skills']
+dataset, stats = read_file_with_skill_prob_user(dataset)
+num_skills = stats['num_skills']
+num_users = stats['num_users']
+num_probs = stats['num_probs']
 X_train, X_val, X_test, y_train, y_val, y_test = split_dataset_with_skill_prob_user(dataset, validation_rate, testing_rate)
 
 print("======== Data Summary ========")
@@ -43,15 +45,18 @@ print("==============================")
 from StudentModel import DKTModel, DataGenerator
 
 # Create generators for training/testing/validation
-train_gen = DataGenerator(X_train, y_train, num_skills, batch_size)
-val_gen = DataGenerator(X_val, y_val, num_skills, batch_size)
-test_gen = DataGenerator(X_test, y_test, num_skills, batch_size)
+train_gen = DataGenerator(X_train, y_train, num_skills, num_users, num_probs, batch_size)
+val_gen = DataGenerator(X_val, y_val, num_skills, num_users, num_probs, batch_size)
+test_gen = DataGenerator(X_test, y_test, num_skills, num_users, num_probs, batch_size)
 
 x, User, Prob,  y = train_gen.next_batch()
 
 print('x, user, prob, y:', x, User, Prob, y)
 # Create model
 student_model = DKTModel(num_skills=train_gen.num_skills,
+                         num_probs = num_probs,
+                         num_users = num_users,
+                         embedding_size = embedding_size,
                       num_features=train_gen.feature_dim,
                       optimizer=optimizer,
                       hidden_units=lstm_units,

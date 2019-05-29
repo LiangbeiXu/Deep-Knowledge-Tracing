@@ -1,8 +1,9 @@
 from keras.callbacks import ModelCheckpoint, Callback, CSVLogger, Progbar
 from keras.models import Sequential, Model
-from keras.layers import TimeDistributed, Masking, Dense, Dropout, Input
+from keras.layers import TimeDistributed, Masking, Dense, Dropout, Input, Embedding
 from keras.layers.recurrent import LSTM
 from keras import backend as K
+from keras import regularizers, optimizers
 from sklearn.metrics import roc_auc_score, precision_score, accuracy_score
 from sklearn.preprocessing import OneHotEncoder
 import random
@@ -109,7 +110,7 @@ class MetricsCallback(Callback):
 
 # This class defines the DKT model.
 class DKTModel(object):
-    def __init__(self, num_skills, num_features, optimizer='rmsprop', hidden_units=100, batch_size=5, dropout_rate=0.5):
+    def __init__(self, num_skills, num_features, num_probs, num_users, embedding_size, regularization = 1e-4, optimizer='rmsprop', hidden_units=100, batch_size=5, dropout_rate=0.5):
         def get_target_skills(y_true, y_pred):
             target_skills = y_true[:, :, 0:num_skills]
             target_labels = y_true[:, :, num_skills]
@@ -123,6 +124,10 @@ class DKTModel(object):
 
         self.batch_size = batch_size
         self.num_skills = num_skills
+        self.num_users = num_users
+        self.num_probs = num_probs
+        self.embedding_size = embedding_size
+        self.regularization = regularization
         # this is DKT
 
         if 0:
@@ -134,13 +139,47 @@ class DKTModel(object):
             self.__model.compile(loss=loss_function, optimizer=optimizer)
 
         #user = Input(name = 'user', shape = [1])
-        item_input = Input(name = 'item', shape = [None, num_features], batch_shape=[batch_size, None, num_features])
-        
-        item = Masking(-1, batch_input_shape=(batch_size, None, num_features)) (item_input)
-        item_LSTM = LSTM(units=hidden_units, return_sequences=True, stateful=True)(item)
-        dropout = Dropout(dropout_rate)(item_LSTM)
-        out = Dense(num_skills, activation='sigmoid')(dropout)
-        self.__model = Model(inputs=item_input, outputs=out)
+        skill_correct_input = Input(name = 'skill_correct', shape = [None, num_features], batch_shape=[batch_size, None, num_features])
+        prob_input = Input(name = 'prob', shape = [None, 1], batch_shape=[batch_size, None, 1])
+        user_input = Input(name = 'user', shape = [None, 1], batch_shape=[batch_size, None, 1])
+
+
+        skill_correct = Masking(-1, batch_input_shape=(batch_size, None, num_features)) (skill_correct_input)
+        prob = Masking(-1, batch_input_shape=(batch_size, None, 1)) (prob_input)
+        user = Masking(-1, batch_input_shape=(batch_size, None, 1)) (user_input)
+
+        user_embedding = Embedding(name = 'user_embedding',
+                                   input_dim = self.num_users,
+                                   output_dim = self.embedding_size,
+                                   embeddings_regularizer=regularizers.l2(self.regularization))(user)
+
+        user_bias = Embedding(name = 'user_bias',
+                                   input_dim = self.num_users,
+                                   output_dim = 1,
+                                   embeddings_regularizer=regularizers.l2(self.regularization))(user)
+
+        prob_embedding = Embedding(name = 'prob_embedding',
+                                   input_dim = self.num_probs,
+                                   output_dim = self.embedding_size,
+                                   embeddings_regularizer=regularizers.l2(self.regularization))(prob)
+
+        prob_bias = Embedding(name = 'prob_bias',
+                                   input_dim = self.num_probs,
+                                   output_dim = 1,
+                                   embeddings_regularizer=regularizers.l2(self.regularization))(prob)
+        skill_correct_LSTM = LSTM(units=hidden_units, return_sequences=True, stateful=True)(skill_correct)
+        dropout = Dropout(dropout_rate)(skill_correct_LSTM)
+        user_dyn = Dense(self.embedding_size, activation='sigmoid')(dropout)
+
+        user_merge = Add()([user_dyn, user_embedding])
+
+        inner_prod = Dot(name='dot_product', normalize=False, axes=1)([user_merge, prob_embedding])
+
+        merged = Add()([inner_prod, user_bias, item_bias])
+
+        merged = Activation('sigmoid')(merged)
+
+        self.__model = Model(inputs=[skill_correct_LSTM, prob_input, user_input], outputs=merged)
         self.__model.compile(loss=loss_function, optimizer=optimizer)
 
     def load_weights(self, filepath):
@@ -191,10 +230,12 @@ class DKTModel(object):
 
 # This class is responsible for feeding the data into the model following a specific format.
 class DataGenerator(object):
-    def __init__(self, features, labels, num_skills, batch_size):
+    def __init__(self, features, labels, num_skills, num_users, num_probs, batch_size):
         self.features = features
         self.labels = labels
         self.num_skills = num_skills
+        self.num_probs = num_probs
+        self.num_users = num_users
         self.batch_size = batch_size
 
         self.step = 0
@@ -297,9 +338,9 @@ class DataGenerator(object):
                         y_data = [answer2]
                         y_student.append(y_data)
 
-                        user_data = [questions[skill_index][0]]
+                        user_data = [questions[skill_index+1][0]]
                         user_student.append(user_data)
-                        prob_data = [questions[skill_index][2]]
+                        prob_data = [questions[skill_index+1][2]]
                         prob_student.append(prob_data)
 
                     x.append(x_student)
