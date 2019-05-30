@@ -1,6 +1,6 @@
 from keras.callbacks import ModelCheckpoint, Callback, CSVLogger, Progbar
 from keras.models import Sequential, Model
-from keras.layers import TimeDistributed, Masking, Dense, Dropout, Input, Embedding
+from keras.layers import TimeDistributed, Masking, Dense, Dropout, Input, Embedding, Add, Dot, Activation, Reshape, Multiply, Concatenate
 from keras.layers.recurrent import LSTM
 from keras import backend as K
 from keras import regularizers, optimizers
@@ -16,11 +16,11 @@ def model_evaluate(test_gen, model, metrics, verbose=0):
     def predict():
         def get_target_skills(preds, labels):
             target_skills = labels[:, :, 0:test_gen.num_skills]
-            target_labels = labels[:, :, test_gen.num_skills]
+            target_labels = labels[:, :, 0]
 
             target_preds = np.sum(preds * target_skills, axis=2)
 
-            return target_preds, target_labels
+            return preds, target_labels
 
         y_true_t = []
         y_pred_t = []
@@ -28,24 +28,35 @@ def model_evaluate(test_gen, model, metrics, verbose=0):
 
         while not test_gen.done:
             # Get batch
-            batch_features, batch_labels = test_gen.next_batch()
+            batch_features, batch_users, batch_probs, batch_flags,  batch_labels = test_gen.next_batch()
 
             # Predict
-            predictions = model.predict_on_batch(batch_features)
+            predictions = model.predict_on_batch([batch_features, batch_users, batch_probs, batch_flags])
 
             # Get target skills
+
             target_preds, target_labels = get_target_skills(predictions, batch_labels)
+            target_test_flag = batch_flags[:, :, 0]
+
             flat_pred = np.reshape(target_preds, [-1])
             flat_true = np.reshape(target_labels, [-1])
+            flat_test_flag = np.reshape(target_test_flag, [-1])
+
 
             # Remove mask
             mask_idx = np.where(flat_true == -1.0)[0]
             flat_pred = np.delete(flat_pred, mask_idx)
             flat_true = np.delete(flat_true, mask_idx)
-
+            flat_test_flag = np.delete(flat_test_flag, mask_idx)
+            # remove training entries
+            train_mask_idx = np.where(flat_test_flag==0)[0]
+            flat_pred = np.delete(flat_pred, train_mask_idx)
+            flat_true = np.delete(flat_true, train_mask_idx)
+            flat_test_flag = np.delete(flat_test_flag, train_mask_idx)
             # Save it
             y_true_t.extend(flat_true)
             y_pred_t.extend(flat_pred)
+
 
             if verbose and test_gen.step < test_gen.total_steps:
                 progbar.update(test_gen.step)
@@ -62,6 +73,7 @@ def model_evaluate(test_gen, model, metrics, verbose=0):
     progbar = Progbar(target=test_gen.total_steps, verbose=verbose)
 
     y_true, y_pred = predict()
+
 
     bin_pred = [1 if p > 0.5 else 0 for p in y_pred]
 
@@ -128,63 +140,94 @@ class DKTModel(object):
         self.num_probs = num_probs
         self.embedding_size = embedding_size
         self.regularization = regularization
+        self.optimizer = optimizer
         # this is DKT
 
         if 0:
-            self.__model = Sequential()
-            self.__model.add(Masking(-1., batch_input_shape=(batch_size, None, num_features)))
-            self.__model.add(LSTM(hidden_units, return_sequences=True, stateful=True))
-            self.__model.add(Dropout(dropout_rate))
-            self.__model.add(TimeDistributed(Dense(num_skills, activation='sigmoid')))
-            self.__model.compile(loss=loss_function, optimizer=optimizer)
+            self.model = Sequential()
+            self.model.add(Masking(-1., batch_input_shape=(batch_size, None, num_features)))
+            self.model.add(LSTM(hidden_units, return_sequences=True, stateful=True))
+            self.model.add(Dropout(dropout_rate))
+            self.model.add(TimeDistributed(Dense(num_skills, activation='sigmoid')))
+            self.model.compile(loss=loss_function, optimizer=optimizer)
+
+        if 1:
+
 
         #user = Input(name = 'user', shape = [1])
         skill_correct_input = Input(name = 'skill_correct', shape = [None, num_features], batch_shape=[batch_size, None, num_features])
         prob_input = Input(name = 'prob', shape = [None, 1], batch_shape=[batch_size, None, 1])
         user_input = Input(name = 'user', shape = [None, 1], batch_shape=[batch_size, None, 1])
+        flag_input = Input(name = 'flag', shape = [None, 1], batch_shape=[batch_size, None, 1])
 
 
-        skill_correct = Masking(-1, batch_input_shape=(batch_size, None, num_features)) (skill_correct_input)
-        prob = Masking(-1, batch_input_shape=(batch_size, None, 1)) (prob_input)
-        user = Masking(-1, batch_input_shape=(batch_size, None, 1)) (user_input)
+        skill_correct = Masking(mask_value = -1, batch_input_shape=(batch_size, None, num_features)) (skill_correct_input)
+        prob = Masking(name='prob_masking', mask_value = -1, batch_input_shape=(batch_size, None, 1)) (prob_input)
+        user = Masking(name='user_masking', mask_value = -1, batch_input_shape=(batch_size, None, 1)) (user_input)
+        # flag = Masking(name='user_masking', mask_value = -1, batch_input_shape=(batch_size, None, 1)) (flag_input)
+        if 1:
+            user_embedding = Embedding(name = 'user_embedding',
+                                       input_dim = self.num_users,
+                                       output_dim = self.embedding_size,
+                                       embeddings_regularizer=regularizers.l2(self.regularization))(user)
 
-        user_embedding = Embedding(name = 'user_embedding',
-                                   input_dim = self.num_users,
-                                   output_dim = self.embedding_size,
-                                   embeddings_regularizer=regularizers.l2(self.regularization))(user)
+            user_bias = Embedding(name = 'user_bias',
+                                       input_dim = self.num_users,
+                                       output_dim = 1,
+                                       embeddings_regularizer=regularizers.l2(self.regularization))(user)
 
-        user_bias = Embedding(name = 'user_bias',
-                                   input_dim = self.num_users,
-                                   output_dim = 1,
-                                   embeddings_regularizer=regularizers.l2(self.regularization))(user)
+            prob_embedding = Embedding(name = 'prob_embedding',
+                                       input_dim = self.num_probs,
+                                       output_dim = self.embedding_size,
+                                       embeddings_regularizer=regularizers.l2(self.regularization))(prob)
 
-        prob_embedding = Embedding(name = 'prob_embedding',
-                                   input_dim = self.num_probs,
-                                   output_dim = self.embedding_size,
-                                   embeddings_regularizer=regularizers.l2(self.regularization))(prob)
+            prob_bias = Embedding(name = 'prob_bias',
+                                       input_dim = self.num_probs,
+                                       output_dim = 1,
+                                       embeddings_regularizer=regularizers.l2(self.regularization))(prob)
+        if 0:
+            user_embedding = Dense(name='user_embedding', units=self.embedding_size, use_bias=False) (user)
+            prob_embedding = Dense(name='prob_embedding', units=self.embedding_size, use_bias=False) (prob)
 
-        prob_bias = Embedding(name = 'prob_bias',
-                                   input_dim = self.num_probs,
-                                   output_dim = 1,
-                                   embeddings_regularizer=regularizers.l2(self.regularization))(prob)
-        skill_correct_LSTM = LSTM(units=hidden_units, return_sequences=True, stateful=True)(skill_correct)
-        dropout = Dropout(dropout_rate)(skill_correct_LSTM)
-        user_dyn = Dense(self.embedding_size, activation='sigmoid')(dropout)
+            user_bias = Dense(name='user_bias', units=1, use_bias=False) (user)
+            prob_bias = Dense(name='prob_bias', units=1, use_bias=False) (prob)
 
-        user_merge = Add()([user_dyn, user_embedding])
+        user_embedding_reshape = Reshape(name='user_embedding_reshape', target_shape=(-1, self.embedding_size)) (user_embedding)
+        prob_embedding_reshape = Reshape(name='prob_embedding_reshape', target_shape=(-1, self.embedding_size)) (prob_embedding)
+        user_bias_reshape = Reshape(name='user_bias_reshape', target_shape=(-1, 1)) (user_bias)
+        prob_bias_reshape = Reshape(name='prob_bias_reshape', target_shape=(-1, 1)) (prob_bias)
 
-        inner_prod = Dot(name='dot_product', normalize=False, axes=1)([user_merge, prob_embedding])
+        LSTM_input = Concatenate(axis=2)([prob_embedding_reshape, skill_correct, prob_bias_reshape])
 
-        merged = Add()([inner_prod, user_bias, item_bias])
+        skill_correct_LSTM = LSTM(name='LSTM', units=hidden_units, return_sequences=True, stateful=True, recurrent_dropout=0.5)(LSTM_input)
 
-        merged = Activation('sigmoid')(merged)
+        dropout = Dropout(name='dropout', rate= dropout_rate)(skill_correct_LSTM)
+        user_dyn = Dense(name='user_dyn_from_LSTM', units=self.embedding_size, activation='relu')(dropout)
 
-        self.__model = Model(inputs=[skill_correct_LSTM, prob_input, user_input], outputs=merged)
-        self.__model.compile(loss=loss_function, optimizer=optimizer)
+        user_merge = Add(name='add_user_dyn_and_stat')([user_dyn, user_embedding_reshape])
+
+        # inner_prod = Dot(name='dot_product', normalize=False, axes=2)([user_merge, prob_embedding_reshape])
+
+        # This is actually inner product layer
+        multiply_user_prob = Multiply(name='multiply_user_prob')([user_merge, prob_embedding_reshape])
+        inner_prod = Dense(name='inner_prod', units=1, activation='linear', kernel_initializer="one", use_bias=False)(multiply_user_prob)
+        inner_prod.trainable = False
+
+        merged = Add(name='add_dot_and_bias')([inner_prod, user_bias_reshape, prob_bias_reshape])
+
+        out = Activation(name='sigmoid_output',activation='sigmoid')(merged)
+        # out = Reshape(name='output_reshape', target_shape=(-1, 1)) (out)
+
+        self.model = Model(inputs=[skill_correct_input, user_input, prob_input, flag_input], outputs=out)
+        self.compile_model()
+
+
+    def compile_model(self):
+        self.model.compile(loss = 'binary_crossentropy', metrics=['accuracy'], optimizer=self.optimizer)
 
     def load_weights(self, filepath):
         assert(filepath is not None)
-        self.__model.load_weights(filepath)
+        self.model.load_weights(filepath)
 
     def fit(self, train_gen, epochs, val_gen, verbose=0, filepath_bestmodel=None, filepath_log=None):
         assert (isinstance(train_gen, DataGenerator))
@@ -201,7 +244,7 @@ class DKTModel(object):
         if verbose:
             print("==== Training Started ====")
 
-        history = self.__model.fit_generator(shuffle=False,
+        history = self.model.fit_generator(shuffle=False,
                                              validation_data=val_gen.get_generator(),
                                              validation_steps=val_gen.total_steps,
                                              epochs=epochs,
@@ -219,7 +262,7 @@ class DKTModel(object):
         assert (isinstance(test_gen, DataGenerator))
         assert (metrics is not None)
 
-        results = model_evaluate(test_gen, self.__model, metrics, verbose)
+        results = model_evaluate(test_gen, self.model, metrics, verbose)
 
         if filepath_log is not None:
             with open(filepath_log, 'w') as fl:
@@ -248,6 +291,8 @@ class DataGenerator(object):
         self.total_steps = int(math.ceil(float(self.features_len) / self.batch_size))
         self.feature_encoder = OneHotEncoder(self.feature_dim, sparse=False)
         self.label_encoder = OneHotEncoder(self.label_dim, sparse=False)
+        self.user_encoder = OneHotEncoder(self.user_dim, sparse=False)
+        self.prob_encoder = OneHotEncoder(self.prob_dim, sparse=False)
         #self.feature_encoder = OneHotEncoder(categories=[range(self.feature_dim)], sparse=False)
         #self.label_encoder = OneHotEncoder(categories=[range(self.label_dim)], sparse=False)
 
@@ -282,33 +327,37 @@ class DataGenerator(object):
         return x
 
     def next_batch(self):
-        def fill_batches(x, user, prob, y):
+        def fill_batches(x, user, prob, flag, y):
             for e in range(self.batch_size - len(x)):
                 x.append([np.array([-1.0 for _ in range(0, self.feature_dim)])])
                 y.append([np.array([-1.0 for _ in range(0, self.label_dim)])])
                 user.append([np.array([-1.0 for _ in range(0, self.user_dim)])])
                 prob.append([np.array([-1.0 for _ in range(0, self.prob_dim)])])
-            return x, user, prob, y
+                flag.append([np.array([-1.0 for _ in range(0, 1)])])
+            return x, user, prob, flag, y
 
-        def pad_sequences(x, user, prob, y):
+        def pad_sequences(x, user, prob, flag, y):
             max_seq_steps = max([len(seq) for seq in x])
-            x = self.__pad_sequences(x, padding='pre', maxlen=max_seq_steps, dim=self.feature_dim, value=-1.0, dtype='float')
-            y = self.__pad_sequences(y, padding='pre', maxlen=max_seq_steps, dim=self.label_dim, value=-1.0, dtype='float')
-            user = self.__pad_sequences(user, padding='pre', maxlen=max_seq_steps, dim=self.user_dim, value=-1.0, dtype='float')
-            prob = self.__pad_sequences(prob, padding='pre', maxlen=max_seq_steps, dim=self.prob_dim, value=-1.0, dtype='float')
-            return x, user, prob, y
+            x = self.__pad_sequences(x, padding='post', maxlen=max_seq_steps, dim=self.feature_dim, value=-1.0, dtype='float')
+            y = self.__pad_sequences(y, padding='post', maxlen=max_seq_steps, dim=self.label_dim, value=-1.0, dtype='float')
+            user = self.__pad_sequences(user, padding='post', maxlen=max_seq_steps, dim=self.user_dim, value=-1.0, dtype='float')
+            prob = self.__pad_sequences(prob, padding='post', maxlen=max_seq_steps, dim=self.prob_dim, value=-1.0, dtype='float')
+            flag = self.__pad_sequences(flag, padding='post', maxlen=max_seq_steps, dim=1, value=-1.0, dtype='float')
+            return x, user, prob, flag, y
 
         def encode_batch(batch_questions, batch_answers):
             x = [] # skill_correct
             y = [] # correct
             prob = []
             user = []
+            test_flag = []
 
             for idx, questions in enumerate(batch_questions):
                 x_student = []
                 y_student = []
                 prob_student = []
                 user_student = []
+                test_flag_student = []
 
                 x_data = np.zeros(self.feature_dim, dtype=int)
                 answers = batch_answers[idx]
@@ -338,17 +387,33 @@ class DataGenerator(object):
                         y_data = [answer2]
                         y_student.append(y_data)
 
+                        if 0: # memory issue
+                            user_id = np.array([questions[skill_index+1][0]])
+                            user_id = user_id.reshape(-1, 1)
+                            user_data = self.user_encoder.fit_transform(user_id)[0]
+                            user_student.append(user_data)
+
+                            prob_id = np.array([questions[skill_index+1][2]])
+                            prob_id = prob_id.reshape(-1, 1)
+                            prob_data = self.prob_encoder.fit_transform(prob_id)[0]
+                            prob_student.append(prob_data)
+
                         user_data = [questions[skill_index+1][0]]
                         user_student.append(user_data)
                         prob_data = [questions[skill_index+1][2]]
                         prob_student.append(prob_data)
 
+                        test_flag_data = [questions[skill_index+1][3]]
+                        test_flag_student.append(test_flag_data)
+
+
                     x.append(x_student)
                     y.append(y_student)
                     user.append(user_student)
                     prob.append(prob_student)
+                    test_flag.append(test_flag_student)
 
-            return x, user, prob, y
+            return x, user, prob, test_flag, y
 
         assert(~self.done)
 
@@ -360,17 +425,17 @@ class DataGenerator(object):
             end_pos = self.features_len
 
         # Apply one-hot encoding
-        x_batch, user_batch, prob_batch, y_batch = encode_batch(self.features[start_pos:end_pos], self.labels[start_pos:end_pos])
+        x_batch, user_batch, prob_batch, flag_batch, y_batch = encode_batch(self.features[start_pos:end_pos], self.labels[start_pos:end_pos])
 
         # Fill up incomplete batch
-        x_batch, user_batch, prob_batch, y_batch = fill_batches(x_batch, user_batch, prob_batch, y_batch)
+        x_batch, user_batch, prob_batch, flag_batch, y_batch = fill_batches(x_batch, user_batch, prob_batch, flag_batch, y_batch)
 
         # Pad sequences to the same size
-        x_batch, user_batch, prob_batch, y_batch = pad_sequences(x_batch, user_batch, prob_batch, y_batch)
+        x_batch, user_batch, prob_batch, flag_batch, y_batch = pad_sequences(x_batch, user_batch, prob_batch, flag_batch, y_batch)
 
         self.step += 1
 
-        return x_batch, user_batch, prob_batch, y_batch
+        return x_batch, user_batch, prob_batch, flag_batch, y_batch
 
     def reset(self, shuffle=True):
         if shuffle:
@@ -388,6 +453,6 @@ class DataGenerator(object):
         while True:
             self.reset()
             while not self.done:
-                batch_features, dummy, dummy2, batch_labels = self.next_batch()
-                print(batch_labels.shape)
-                yield batch_features, batch_labels
+                batch_features, batch_users, batch_probs, batch_flags, batch_labels = self.next_batch()
+                # (batch_labels.shape)
+                yield [batch_features, batch_users, batch_probs, batch_flags], batch_labels

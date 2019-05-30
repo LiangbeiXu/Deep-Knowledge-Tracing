@@ -4,10 +4,10 @@ import numpy as np
 
 
 
-def split_dataset_with_skill_prob_user(data, validation_rate, testing_rate, shuffle=True):
+def split_dataset_with_skill_prob_user_flag(data, validation_rate, testing_rate, shuffle=True):
     def split(dt):
         # user,  skill, prob
-        return [[ [value[0], value[1], value[3]] for value in seq] for seq in dt], [[value[2] for value in seq] for seq in dt]
+        return [[ [value[0], value[1], value[3], value[4]] for value in seq] for seq in dt], [[value[2] for value in seq] for seq in dt]
 
     seqs = data
     if shuffle:
@@ -74,8 +74,20 @@ def read_file_prob(dataset_path):
 
     return list(seqs_by_student.values()), num_item
 
-def read_file_with_skill_prob_user(dataset_path):
 
+def generate_user_data(data):
+    students_seq = data.groupby("user_id", as_index=True)['user_id', "skill_id", "correct", 'problem_id', 'test'].apply(lambda x: x.values.tolist()).tolist()
+    seqs_by_student = {}
+    skill_ids = {}
+    num_skill = 0
+    for seq_idx, seq in enumerate(students_seq):
+        for (user, skill, answer, problem, test_flag) in seq:
+            if seq_idx not in seqs_by_student:
+                seqs_by_student[seq_idx] = []
+            seqs_by_student[seq_idx].append((user, skill, answer, problem, test_flag))
+    return list(seqs_by_student.values())
+
+def read_file_with_skill_prob_user(dataset_path):
     data = pd.read_csv(dataset_path)
     print(dataset_path, data.shape[0],  len(np.unique(data['user_id'])), len(np.unique(data['problem_id'])), len(np.unique(data['skill_id'])))
     students_seq = data.groupby("user_id", as_index=True)['user_id', "skill_id", "correct", 'problem_id'].apply(lambda x: x.values.tolist()).tolist()
@@ -89,6 +101,13 @@ def read_file_with_skill_prob_user(dataset_path):
             seqs_by_student[seq_idx].append((user, skill, answer, problem))
     return list(seqs_by_student.values()), {'num_entries': data.shape[0], 'num_users': len(np.unique(data['user_id'])), 'num_skills': len(np.unique(data['skill_id'])),
                              'num_probs': len(np.unique(data['problem_id']))}
+
+
+def read_file_for_mf(dataset_path):
+    data = pd.read_csv(dataset_path)
+    print(dataset_path, data.shape[0],  len(np.unique(data['user_id'])), len(np.unique(data['problem_id'])), len(np.unique(data['skill_id'])))
+    return data[['user_id','problem_id', 'correct', 'skill_id']]
+
 
 def read_file(dataset_path):
     data = pd.read_csv(dataset_path, dtype={'skill_name': str})
