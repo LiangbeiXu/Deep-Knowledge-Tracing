@@ -151,7 +151,7 @@ class DKTModel(object):
             self.model.add(TimeDistributed(Dense(num_skills, activation='sigmoid')))
             self.model.compile(loss=loss_function, optimizer=optimizer)
 
-        if 1:
+
 
 
         #user = Input(name = 'user', shape = [1])
